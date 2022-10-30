@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	cliconfig "github.com/docker/cli/cli/config"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+
 	"github.com/moby/term"
 
 	"github.com/docker/docker/client"
@@ -36,14 +40,28 @@ type DockerRequest struct {
 	Environment    []string                     `json:"environment"`
 }
 
+var privateDockerRegistry = "d.puneet.cc"
 var docker *client.Client
 
 func startContainer(request DockerRequest) error {
-	if !strings.HasPrefix(request.Image, "d.puneet.cc") {
-		return errors.New("only d.puneet.cc images supported")
+	if !strings.HasPrefix(request.Image, privateDockerRegistry) {
+		return errors.New("only " + privateDockerRegistry + " images supported")
 	}
 
-	reader, err := docker.ImagePull(context.Background(), request.Image, types.ImagePullOptions{})
+	// Load docker registry config
+	cfg, err := cliconfig.Load("")
+	if err != nil {
+		return errors.New("config load failed")
+	}
+
+	conf, _ := cfg.GetAuthConfig(privateDockerRegistry)
+	registryAuthConfig := types.AuthConfig(conf)
+	jsonRegistryAuth, _ := json.Marshal(registryAuthConfig)
+	registryAuthBase64 := base64.StdEncoding.EncodeToString([]byte(jsonRegistryAuth))
+
+	reader, err := docker.ImagePull(context.Background(), request.Image, types.ImagePullOptions{
+		RegistryAuth: registryAuthBase64,
+	})
 
 	if err != nil {
 		return err

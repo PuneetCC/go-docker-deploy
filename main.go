@@ -10,7 +10,9 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/moby/term"
 
 	"github.com/docker/docker/client"
 	"github.com/gofiber/fiber/v2"
@@ -41,9 +43,17 @@ func startContainer(request DockerRequest) error {
 		return errors.New("only d.puneet.cc images supported")
 	}
 
-	docker.ImagePull(context.Background(), request.Image, types.ImagePullOptions{})
+	reader, err := docker.ImagePull(context.Background(), request.Image, types.ImagePullOptions{})
 
-	_, err := docker.ContainerInspect(context.Background(), request.ContainerName)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	termFd, isTerm := term.GetFdInfo(os.Stderr)
+	jsonmessage.DisplayJSONMessagesStream(reader, os.Stderr, termFd, isTerm, nil)
+
+	_, err = docker.ContainerInspect(context.Background(), request.ContainerName)
 	if err == nil {
 		// container exists - stop and remove
 		err = docker.ContainerStop(context.Background(), request.ContainerName, nil)
@@ -120,15 +130,15 @@ func main() {
 
 	app.Post("/", func(c *fiber.Ctx) error {
 		if c.Get("x-api-key") != os.Getenv("DOCKER_DEPLOY_SECRET") {
-			return c.JSON(&fiber.Map{"error": 1, "message": "Unauthorised Access"})
+			return c.Status(500).JSON(&fiber.Map{"error": 1, "message": "Unauthorised Access"})
 		}
 		var request DockerRequest
 		if err := c.BodyParser(&request); err != nil {
-			return c.JSON(&fiber.Map{"error": 1, "message": err.Error()})
+			return c.Status(500).JSON(&fiber.Map{"error": 1, "message": err.Error()})
 		}
 		err := startContainer(request)
 		if err != nil {
-			return c.JSON(&fiber.Map{"error": 1, "message": err.Error()})
+			return c.Status(500).JSON(&fiber.Map{"error": 1, "message": err.Error()})
 		}
 		return c.JSON(&fiber.Map{"error": 0, "message": "Container Started"})
 	})

@@ -86,6 +86,10 @@ func startContainer(request DockerRequest) error {
 
 	hostConfig := &container.HostConfig{}
 
+	hostConfig.RestartPolicy = container.RestartPolicy{
+		Name: "always",
+	}
+
 	// add: Volume Bindings
 	if len(request.VolumeBindings) > 0 {
 		hostConfig.Mounts = []mount.Mount{}

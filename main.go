@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	cliconfig "github.com/docker/cli/cli/config"
@@ -38,10 +39,36 @@ type DockerRequest struct {
 	PortBindings   []DockerPortBindingRequest   `json:"portBindings"`
 	VolumeBindings []DockerVolumeBindingRequest `json:"volumeBindings"`
 	Environment    []string                     `json:"environment"`
+	Memory         string                       `json:"memory"`
+	CPUShares      string                       `json:"cpuShares"`
 }
 
 var privateDockerRegistry = "d.puneet.cc"
 var docker *client.Client
+
+func convertToBytes(val string) (int64, error) {
+	units := map[string]int64{
+		"KB": 1024,
+		"MB": 1024 * 1024,
+		"GB": 1024 * 1024 * 1024,
+		"TB": 1024 * 1024 * 1024 * 1024,
+	}
+	val = strings.ToUpper(val)
+	unit := val[len(val)-2:]
+	if _, ok := units[unit]; !ok {
+		unit = val[len(val)-1:]
+		if _, ok := units[unit]; !ok {
+			return 0, fmt.Errorf("Invalid unit: %s", unit)
+		}
+		val = val[:len(val)-1]
+	}
+	numStr := val[:len(val)-len(unit)]
+	num, err := strconv.ParseInt(numStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return num * units[unit], nil
+}
 
 func startContainer(request DockerRequest) error {
 	if !strings.HasPrefix(request.Image, privateDockerRegistry) {
@@ -88,6 +115,29 @@ func startContainer(request DockerRequest) error {
 
 	hostConfig.RestartPolicy = container.RestartPolicy{
 		Name: "always",
+	}
+
+	// handle memory and cpushare allocation
+	if request.Memory != "" || request.CPUShares != "" {
+		hostConfig.Resources = container.Resources{}
+	}
+
+	if request.Memory != "" {
+		memoryInBytes, err := convertToBytes(request.Memory)
+		if err != nil {
+			fmt.Println("[startContainer][Memory-Parsing][ERROR] : " + err.Error())
+			return err
+		}
+		hostConfig.Resources.Memory = memoryInBytes
+	}
+
+	if request.CPUShares != "" {
+		cpuShares, err := strconv.ParseInt(request.CPUShares, 10, 64)
+		if err != nil {
+			fmt.Println("[startContainer][CPUShares-Parsing][ERROR] : " + err.Error())
+			return err
+		}
+		hostConfig.Resources.CPUShares = cpuShares
 	}
 
 	// add: Volume Bindings

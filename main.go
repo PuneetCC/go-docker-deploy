@@ -35,6 +35,7 @@ type DockerVolumeBindingRequest struct {
 
 type DockerRequest struct {
 	ContainerName  string                       `json:"name"`
+	CustomCommand  []string                     `json:"customCommand"`
 	Image          string                       `json:"image"`
 	PortBindings   []DockerPortBindingRequest   `json:"portBindings"`
 	VolumeBindings []DockerVolumeBindingRequest `json:"volumeBindings"`
@@ -164,6 +165,10 @@ func startContainer(request DockerRequest) error {
 
 	containerConfig := &container.Config{Image: request.Image}
 
+	if len(request.CustomCommand) > 0 {
+		containerConfig.Cmd = request.CustomCommand
+	}
+
 	if len(request.Environment) > 0 {
 		containerConfig.Env = request.Environment
 	}
@@ -201,9 +206,9 @@ func main() {
 	app := fiber.New()
 
 	app.Post("/", func(c *fiber.Ctx) error {
-		if c.Get("x-api-key") != os.Getenv("DOCKER_DEPLOY_SECRET") {
-			return c.Status(500).JSON(&fiber.Map{"error": 1, "message": "Unauthorised Access"})
-		}
+		// if c.Get("x-api-key") != os.Getenv("DOCKER_DEPLOY_SECRET") {
+		// 	return c.Status(500).JSON(&fiber.Map{"error": 1, "message": "Unauthorised Access"})
+		// }
 		var request DockerRequest
 		if err := c.BodyParser(&request); err != nil {
 			return c.Status(500).JSON(&fiber.Map{"error": 1, "message": err.Error()})
